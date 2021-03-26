@@ -13,6 +13,7 @@ class Courier(db.Model):
 
 
 class CourierSchema(Schema):
+    courier_id = fields.Int(required=True)
     courier_type = fields.Str(required=True, validate=validate.OneOf(['foot', 'bike', 'car']))
     regions = fields.List(cls_or_instance=fields.Int(), required=True)
     working_hours = fields.List(cls_or_instance=fields.Str(

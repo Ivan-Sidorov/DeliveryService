@@ -17,9 +17,12 @@ def post_couriers():
         courier_id = courier['courier_id']
         if courier_id in list(map(lambda x: x.courier_id, Courier.query.all())):
             ids_error.append(courier_id)
+            print("ok1")
         try:
             result = schema.load(courier)
-        except exceptions.MarshmallowError:
+        except exceptions.MarshmallowError as e:
+            print("ok2")
+            print(e)
             if courier['courier_id'] not in ids_error:
                 ids_error.append(courier['courier_id'])
     for courier in data:
@@ -60,31 +63,37 @@ def edit_courier(courier_id):
         for order in orders:
             order.courier_id = None
             order.assign = None
-    elif "regions" in keys:
+        db.session.commit()
+    if "regions" in keys:
         regions = result['regions']
         if not regions:
             return make_response(jsonify({"message": "The 'regions' field is not described"}), 400)
+        regions_old = Regions.query.filter(Regions.courier_id == courier_id).all()
+        for region in regions_old:
+            db.session.delete(region)
         for region in regions:
-            # здесь надо либо удалять либо создавать
-            region_info = Regions.query.filter(Regions.courier_id == courier_id).first()
-            region_info.region = region
+            db.session.add(Regions(region, courier_id))
         orders = Orders.query.filter(
             Orders.courier_id == courier_id, Orders.complete == None, Orders.region not in regions).all()
         for order in orders:
             order.courier_id = None
             order.assign = None
-    elif "working_hours" in keys:
+        db.session.commit()
+    if "working_hours" in keys:
         working_hours = result['working_hours']
         if not working_hours:
             return make_response(jsonify({"message": "The 'working_hours' field is not described"}), 400)
-        working_hours = WorkingHours.query.filter(WorkingHours.hours in working_hours).all()
-        for hours in working_hours:
-            hours_info = WorkingHours.query.filter(WorkingHours.courier_id == courier_id).first()
-            hours_info.hours = hours
         orders = Orders.query.filter(Orders.courier_id == courier_id).all()
+        wh_old = WorkingHours.query.filter(WorkingHours.courier_id == courier_id).all()
+        for wh in wh_old:
+            db.session.delete(wh)
+        for wh in working_hours:
+            db.session.add(WorkingHours(wh, courier_id))
+        working_hours = WorkingHours.query.filter(WorkingHours.courier_id == courier_id)
         for work_hours in working_hours:
             start_cour, end_cour = to_time(work_hours.hours)
             for order in orders:
+                flag = False
                 for hours in order.hours:
                     start_ord, end_ord = to_time(hours.hours)
                     if (start_ord <= start_cour <= end_ord) or (start_cour <= start_ord <= end_cour):
@@ -92,9 +101,8 @@ def edit_courier(courier_id):
                 if not flag:
                     order.courier_id = None
                     order.assign = None
-    db.session.commit()
+        db.session.commit()
     courier = Courier.query.get(courier_id)
-    print(courier.regions)
     courier_data = {
         "courier_id": courier.courier_id,
         "courier_type": courier.courier_type[0].__repr__(),
@@ -171,19 +179,19 @@ def assign_orders():
     orders = Orders.query.filter(Orders.weight <= courier_vol, Orders.region.in_(courier_regions),
                                  Orders.courier_id == None).all()
     courier_hours = courier.working_hours
-    flag = False
     ids = []
     assign_time = arrow.utcnow().isoformat()[:-10] + 'Z'
     for work_hours in courier_hours:
         start_cour, end_cour = to_time(work_hours.hours)
         for order in orders:
+            flag = False
             for hours in order.hours:
                 start_ord, end_ord = to_time(hours.hours)
                 if (start_ord <= start_cour <= end_ord) or (start_cour <= start_ord <= end_cour):
                     flag = True
             if flag and order.order_id not in ids:
                 ids.append(order.order_id)
-                res_ord = Orders.query.filter(Orders.order_id == order.order_id).first()
+                res_ord = Orders.query.get(order.order_id)
                 res_ord.courier_id = courier_id
                 res_ord.assign = assign_time
                 db.session.commit()
