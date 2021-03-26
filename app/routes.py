@@ -8,23 +8,31 @@ import datetime
 
 @app.route('/couriers', methods=['POST'])
 def post_couriers():
-    # не допускать пустой список
+    # DONE
     data = request.json['data']
-    ids_error = []
+    ids_error = {}
     ids_success = []
     schema = CourierSchema()
     for courier in data:
         courier_id = courier['courier_id']
         if courier_id in list(map(lambda x: x.courier_id, Courier.query.all())):
-            ids_error.append(courier_id)
-            print("ok1")
+            ids_error[courier_id] = {"courier_id": "Courier with this id already exists."}
         try:
             result = schema.load(courier)
-        except exceptions.MarshmallowError as e:
-            print("ok2")
-            print(e)
+        except exceptions.MarshmallowError as err:
             if courier['courier_id'] not in ids_error:
-                ids_error.append(courier['courier_id'])
+                ids_error[courier['courier_id']] = err.messages
+            ids_error[courier_id].update(err.messages)
+        if not courier['regions']:
+            message = {"regions": "This field is empty."}
+            if courier['courier_id'] not in ids_error:
+                ids_error[courier['courier_id']] = message
+            ids_error[courier_id].update(message)
+        if not courier['working_hours']:
+            message = {"working_hours": "This field is empty."}
+            if courier['courier_id'] not in ids_error:
+                ids_error[courier['courier_id']] = message
+            ids_error[courier_id].update(message)
     for courier in data:
         courier_id = courier['courier_id']
         if not ids_error:
@@ -38,12 +46,17 @@ def post_couriers():
             db.session.commit()
             ids_success.append(courier_id)
     if ids_error:
-        return make_response(jsonify({"validation_error": {"couriers": [{"id": c_id} for c_id in ids_error]}}), 400)
+        for i in ids_error:
+            ids_error[i].update({"id": i})
+        print(ids_error)
+        return make_response(jsonify({"validation_error": {"couriers": [ids_error[i] for i in ids_error]}}), 400)
     return make_response(jsonify({"couriers": [{"id": c_id} for c_id in ids_success]}), 201)
 
 
 @app.route('/couriers/<int:courier_id>', methods=['PATCH'])
 def edit_courier(courier_id):
+    if courier_id not in list(map(lambda x: x.courier_id, Courier.query.all())):
+        return abort(404)
     schema = CourierEditSchema()
     try:
         result = schema.load(request.json)
@@ -115,7 +128,7 @@ def edit_courier(courier_id):
 @app.route('/couriers/<int:courier_id>', methods=['GET'])
 def get_courier(courier_id):
     if courier_id not in list(map(lambda x: x.courier_id, Courier.query.all())):
-        return make_response(jsonify({"message": f"Courier with id={courier_id} does not exist"}), 404)
+        return abort(404)
     courier = Courier.query.get(courier_id)
     courier_data = {
         "courier_id": courier.courier_id,
@@ -125,41 +138,41 @@ def get_courier(courier_id):
     }
     orders_complete = Orders.query.filter(Orders.courier_id == courier_id, Orders.complete != None).all()
     courier_data["earnings"] = sum([500 * order.coef for order in orders_complete])
+    if not orders_complete:
+        return make_response((jsonify(courier_data), 201))
     rating = 0
     cour_regions = [int(i.__repr__()) for i in courier.regions]
     districts = []
     for i in range(len(cour_regions)):
-        print(cour_regions[i], type(cour_regions[i]))
-        print(courier_id, type(courier_id))
         districts.append(Orders.query.order_by(Orders.complete).filter(
             Orders.courier_id == courier_id, Orders.region == cour_regions[i]).all())
+    print(districts)
     durations = []
     for i in range(len(districts)):
+        distr = []
         last = districts[i][-1]
-        for j in range(len(districts[i])-1):
+        for j in range(len(districts[i]) - 1):
             start = arrow.get(districts[i][j].complete)
-            end = arrow.get(districts[i][j+1].complete)
-            durations.append((end - start).total_seconds())
+            end = arrow.get(districts[i][j + 1].complete)
+            distr.append((end - start).total_seconds())
         start = arrow.get(last.assign)
         end = arrow.get(last.complete)
-        durations.append((end - start).total_seconds())
-    courier_data["rating"] = (60 * 60 - min(min(durations), 60 * 60)) / (60 * 60) * 5
-    return make_response(jsonify(courier_data), 201)
-
-
-
-
+        distr.append((end - start).total_seconds())
+        durations.append(sum(distr) / len(distr))
+    print(durations)
+    courier_data["rating"] = round((60 * 60 - min(min(durations), 60 * 60)) / (60 * 60) * 5, 2)
+    return make_response(jsonify(courier_data), 200)
 
 
 @app.route('/orders', methods=['POST'])
 def post_orders():
-    # разобраться с весами посылок (2 знака после запятой)
-    # а что если нет поля data
+    # TODO допускать только два знака после запятой
+    # TODO поля data может не быть
     data = request.json['data']
     ids_error = []
     ids_success = []
     schema = OrderSchema()
-    # а что если неверно названы поля или есть лишние
+    # TODO а что если неверно названы поля или есть лишние
     for order in data:
         order_id = order['order_id']
         if order_id in list(map(lambda x: x.order_id, Orders.query.all())):
@@ -225,16 +238,16 @@ def assign_orders():
                                        Orders.assign != None).with_entities(Orders.order_id).all()
     total_orders = [x[0] for x in total_orders]
     if not total_orders:
-        return make_response(jsonify({"orders": []}), 201)
+        return make_response(jsonify({"orders": []}), 200)
     times = Orders.query.filter(Orders.assign != None).order_by(Orders.complete).with_entities(Orders.assign).all()
     assign_time = times[-1][0]
-    return make_response(jsonify({"orders": [{"id": ord_id} for ord_id in total_orders], "assign_time": assign_time}), 200)
+    return make_response(jsonify({"orders": [{"id": ord_id} for ord_id in total_orders], "assign_time": assign_time}),
+                         200)
 
 
 @app.route('/orders/complete', methods=['POST'])
 def orders_complete():
-    # разобраться с датами
-    # порядок вывода наоборот
+    # TODO разобраться с датами
     schema = CompleteSchema()
     try:
         result = schema.load(request.json)
