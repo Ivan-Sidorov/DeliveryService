@@ -113,10 +113,9 @@ def edit_courier(courier_id):
 
 
 @app.route('/couriers/<int:courier_id>', methods=['GET'])
-def get_couriers(courier_id):
+def get_courier(courier_id):
     if courier_id not in list(map(lambda x: x.courier_id, Courier.query.all())):
-        return make_response(jsonify({"answer": "not found"}), 404)
-    # courier = Courier.query.filter(Courier.courier_id == courier_id).first()
+        return make_response(jsonify({"message": f"Courier with id={courier_id} does not exist"}), 404)
     courier = Courier.query.get(courier_id)
     courier_data = {
         "courier_id": courier.courier_id,
@@ -124,7 +123,32 @@ def get_couriers(courier_id):
         "regions": [int(i.__repr__()) for i in courier.regions],
         "working_hours": [i.__repr__() for i in courier.working_hours]
     }
-    return make_response(jsonify({"data": [courier_data]}), 201)
+    orders_complete = Orders.query.filter(Orders.courier_id == courier_id, Orders.complete != None).all()
+    courier_data["earnings"] = sum([500 * order.coef for order in orders_complete])
+    rating = 0
+    cour_regions = [int(i.__repr__()) for i in courier.regions]
+    districts = []
+    for i in range(len(cour_regions)):
+        print(cour_regions[i], type(cour_regions[i]))
+        print(courier_id, type(courier_id))
+        districts.append(Orders.query.order_by(Orders.complete).filter(
+            Orders.courier_id == courier_id, Orders.region == cour_regions[i]).all())
+    durations = []
+    for i in range(len(districts)):
+        last = districts[i][-1]
+        for j in range(len(districts[i])-1):
+            start = arrow.get(districts[i][j].complete)
+            end = arrow.get(districts[i][j+1].complete)
+            durations.append((end - start).total_seconds())
+        start = arrow.get(last.assign)
+        end = arrow.get(last.complete)
+        durations.append((end - start).total_seconds())
+    courier_data["rating"] = (60 * 60 - min(min(durations), 60 * 60)) / (60 * 60) * 5
+    return make_response(jsonify(courier_data), 201)
+
+
+
+
 
 
 @app.route('/orders', methods=['POST'])
@@ -175,6 +199,7 @@ def assign_orders():
         return abort(404)
     courier_vol = (Type.query.filter(Type.courier_id == courier_id).first()).vol
     courier = Courier.query.get(courier_id)
+    cour_coef = Type.query.filter(Type.courier_id == courier_id).first().coef
     courier_regions = [int(i.__repr__()) for i in courier.regions]
     orders = Orders.query.filter(Orders.weight <= courier_vol, Orders.region.in_(courier_regions),
                                  Orders.courier_id == None).all()
@@ -194,6 +219,7 @@ def assign_orders():
                 res_ord = Orders.query.get(order.order_id)
                 res_ord.courier_id = courier_id
                 res_ord.assign = assign_time
+                res_ord.coef = cour_coef
                 db.session.commit()
     total_orders = Orders.query.filter(Orders.courier_id == courier_id,
                                        Orders.assign != None).with_entities(Orders.order_id).all()
