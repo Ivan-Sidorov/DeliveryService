@@ -44,9 +44,9 @@ def edit_courier(courier_id):
     schema = CourierEditSchema()
     try:
         result = schema.load(request.json)
-    except exceptions.MarshmallowError as e:
-        print(e)
-        make_response(jsonify(e), 400)
+        print(result)
+    except exceptions.MarshmallowError as err:
+        return make_response(jsonify(err.messages), 400)
     courier = Courier.query.get(courier_id)
     keys = list(result.keys())
     if "courier_type" in keys:
@@ -55,7 +55,8 @@ def edit_courier(courier_id):
         type_info = Type.query.filter(Type.courier_id == courier_id).first()
         type_info.type = courier_type
         type_info.calc_vol_coef()
-        orders = Orders.query.filter(Orders.courier_id == courier_id, Orders.complete == None, Orders.weight > type_info.vol).all()
+        orders = Orders.query.filter(
+            Orders.courier_id == courier_id, Orders.complete == None, Orders.weight > type_info.vol).all()
         for order in orders:
             order.courier_id = None
             order.assign = None
@@ -64,17 +65,43 @@ def edit_courier(courier_id):
         if not regions:
             return make_response(jsonify({"message": "The 'regions' field is not described"}), 400)
         for region in regions:
+            # здесь надо либо удалять либо создавать
             region_info = Regions.query.filter(Regions.courier_id == courier_id).first()
             region_info.region = region
+        orders = Orders.query.filter(
+            Orders.courier_id == courier_id, Orders.complete == None, Orders.region not in regions).all()
+        for order in orders:
+            order.courier_id = None
+            order.assign = None
     elif "working_hours" in keys:
         working_hours = result['working_hours']
         if not working_hours:
             return make_response(jsonify({"message": "The 'working_hours' field is not described"}), 400)
+        working_hours = WorkingHours.query.filter(WorkingHours.hours in working_hours).all()
         for hours in working_hours:
             hours_info = WorkingHours.query.filter(WorkingHours.courier_id == courier_id).first()
             hours_info.hours = hours
+        orders = Orders.query.filter(Orders.courier_id == courier_id).all()
+        for work_hours in working_hours:
+            start_cour, end_cour = to_time(work_hours.hours)
+            for order in orders:
+                for hours in order.hours:
+                    start_ord, end_ord = to_time(hours.hours)
+                    if (start_ord <= start_cour <= end_ord) or (start_cour <= start_ord <= end_cour):
+                        flag = True
+                if not flag:
+                    order.courier_id = None
+                    order.assign = None
     db.session.commit()
-    return make_response()
+    courier = Courier.query.get(courier_id)
+    print(courier.regions)
+    courier_data = {
+        "courier_id": courier.courier_id,
+        "courier_type": courier.courier_type[0].__repr__(),
+        "regions": [int(i.__repr__()) for i in courier.regions],
+        "working_hours": [i.__repr__() for i in courier.working_hours]
+    }
+    return make_response(jsonify(courier_data), 200)
 
 
 @app.route('/couriers/<int:courier_id>', methods=['GET'])
