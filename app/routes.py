@@ -8,7 +8,10 @@ import datetime
 
 @app.route('/couriers', methods=['POST'])
 def post_couriers():
-    # DONE
+    try:
+        data = request.json['data']
+    except KeyError:
+        return make_response(jsonify({"message": "Wrong structure, field 'Data' is required."}), 400)
     data = request.json['data']
     ids_error = {}
     ids_success = []
@@ -23,16 +26,6 @@ def post_couriers():
             if courier['courier_id'] not in ids_error:
                 ids_error[courier['courier_id']] = err.messages
             ids_error[courier_id].update(err.messages)
-        if not courier['regions']:
-            message = {"regions": "This field is empty."}
-            if courier['courier_id'] not in ids_error:
-                ids_error[courier['courier_id']] = message
-            ids_error[courier_id].update(message)
-        if not courier['working_hours']:
-            message = {"working_hours": "This field is empty."}
-            if courier['courier_id'] not in ids_error:
-                ids_error[courier['courier_id']] = message
-            ids_error[courier_id].update(message)
     for courier in data:
         courier_id = courier['courier_id']
         if not ids_error:
@@ -48,7 +41,6 @@ def post_couriers():
     if ids_error:
         for i in ids_error:
             ids_error[i].update({"id": i})
-        print(ids_error)
         return make_response(jsonify({"validation_error": {"couriers": [ids_error[i] for i in ids_error]}}), 400)
     return make_response(jsonify({"couriers": [{"id": c_id} for c_id in ids_success]}), 201)
 
@@ -166,22 +158,23 @@ def get_courier(courier_id):
 
 @app.route('/orders', methods=['POST'])
 def post_orders():
-    # TODO допускать только два знака после запятой
-    # TODO поля data может не быть
-    data = request.json['data']
-    ids_error = []
+    try:
+        data = request.json['data']
+    except KeyError:
+        return make_response(jsonify({"message": "Wrong structure, field 'Data' is required."}), 400)
+    ids_error = {}
     ids_success = []
     schema = OrderSchema()
-    # TODO а что если неверно названы поля или есть лишние
     for order in data:
         order_id = order['order_id']
         if order_id in list(map(lambda x: x.order_id, Orders.query.all())):
             ids_error.append(order_id)
         try:
             result = schema.load(order)
-        except exceptions.MarshmallowError:
+        except exceptions.MarshmallowError as err:
             if order['order_id'] not in ids_error:
-                ids_error.append(order['order_id'])
+                ids_error[order_id] = err.messages
+            ids_error[order_id].update(err.messages)
     for order in data:
         order_id = order['order_id']
         if not ids_error:
@@ -193,7 +186,9 @@ def post_orders():
             db.session.commit()
             ids_success.append(order_id)
     if ids_error:
-        return make_response(jsonify({"validation_error": {"orders": [{"id": o_id} for o_id in ids_error]}}), 400)
+        for i in ids_error:
+            ids_error[i].update({"id": i})
+        return make_response(jsonify({"validation_error": {"couriers": [ids_error[i] for i in ids_error]}}), 400)
     return make_response(jsonify({"orders": [{"id": o_id} for o_id in ids_success]}), 201)
 
 
@@ -207,6 +202,11 @@ def to_time(interval):
 
 @app.route('/orders/assign', methods=['POST'])
 def assign_orders():
+    schema = AssignSchema()
+    try:
+        result = schema.load(request.json)
+    except exceptions.MarshmallowError as err:
+        return make_response(jsonify({"message": err.messages}), 400)
     courier_id = request.json['courier_id']
     if courier_id not in list(map(lambda x: x.courier_id, Courier.query.all())):
         return abort(404)
@@ -247,23 +247,27 @@ def assign_orders():
 
 @app.route('/orders/complete', methods=['POST'])
 def orders_complete():
-    # TODO разобраться с датами
     schema = CompleteSchema()
     try:
         result = schema.load(request.json)
-    except exceptions.MarshmallowError:
-        return make_response(jsonify({"message": "incorrect data type"}), 400)
+    except exceptions.MarshmallowError as err:
+        return make_response(jsonify({"message": err.messages}), 400)
     courier_id = result['courier_id']
     order_id = result['order_id']
+    complete_time = request.json['complete_time']
+    if complete_time[10] != 'T':
+        return make_response(jsonify({"message": {"complete_time": ["Not a valid datetime"]}}), 400)
     cour_exists = Courier.query.get(courier_id)
     order_exists = Orders.query.get(order_id)
     if cour_exists is None or order_exists is None:
-        return make_response(jsonify({"message": "non-existent data"}), 400)
+        return make_response(jsonify({"message": "Non-existent data"}), 400)
     cour_order = Orders.query.filter(Orders.courier_id == courier_id, Orders.order_id == order_id).first()
     if not cour_order:
-        return make_response(jsonify({"message": "this order is not assigned to this courier"}), 400)
+        return make_response(jsonify({"message": "This order is not assigned to this courier"}), 400)
     if order_exists.complete:
-        return make_response(jsonify({"order_id": order_exists.order_id}), 200)
-    order_exists.complete = request.json['complete_time']
+        return make_response(jsonify({"message": "This order has already been completed"}), 400)
+    if complete_time <= order_exists.assign:
+        return make_response(jsonify({"message:" "complete time is not valid."}), 400)
+    order_exists.complete = complete_time
     db.session.commit()
     return make_response(jsonify({"order_id": order_exists.order_id}), 200)

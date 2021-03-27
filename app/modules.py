@@ -1,5 +1,6 @@
 from app import db
-from marshmallow import Schema, fields, validate, exceptions
+from marshmallow import Schema, fields, validate, exceptions, validates_schema, validates
+# import datetime
 
 
 class Courier(db.Model):
@@ -13,21 +14,41 @@ class Courier(db.Model):
 
 
 class CourierSchema(Schema):
-    courier_id = fields.Int(required=True)
+    courier_id = fields.Int(required=True, validate=validate.Range(1))
     courier_type = fields.Str(required=True, validate=validate.OneOf(['foot', 'bike', 'car']))
-    regions = fields.List(cls_or_instance=fields.Int(), required=True)
+    regions = fields.List(cls_or_instance=fields.Int(validate=validate.Range(1)), required=True)
     working_hours = fields.List(cls_or_instance=fields.Str(
         validate=validate.Regexp(r"^(([0-1][0-9])|(2[0-3])):[0-5][0-9]-(([0-1][0-9])|(2[0-3])):[0-5][0-9]$")),
         required=True)
+
+    @validates("regions")
+    def is_regions_empty(self, lst):
+        if not lst:
+            raise exceptions.ValidationError("This field is empty.")
+
+    @validates("working_hours")
+    def is_wh_empty(self, lst):
+        if not lst:
+            raise exceptions.ValidationError("This field is empty.")
 
 
 class CourierEditSchema(Schema):
     courier_id = fields.Int()
     courier_type = fields.Str(validate=validate.OneOf(['foot', 'bike', 'car']))
-    regions = fields.List(cls_or_instance=fields.Int(required=True))
+    regions = fields.List(cls_or_instance=fields.Int(validate=validate.Range(1)))
     working_hours = fields.List(
         cls_or_instance=fields.Str(
             validate=validate.Regexp(r"^(([0-1][0-9])|(2[0-3])):[0-5][0-9]-(([0-1][0-9])|(2[0-3])):[0-5][0-9]$")))
+
+    @validates("regions")
+    def is_regions_empty(self, lst):
+        if not lst:
+            raise exceptions.ValidationError("This field is empty.")
+
+    @validates("working_hours")
+    def is_wh_empty(self, lst):
+        if not lst:
+            raise exceptions.ValidationError("This field is empty.")
 
 
 class WorkingHours(db.Model):
@@ -94,12 +115,24 @@ class Orders(db.Model):
 
 
 class OrderSchema(Schema):
-    order_id = fields.Int(required=True)
+    order_id = fields.Int(required=True, validate=validate.Range(1))
     weight = fields.Float(required=True)
-    region = fields.Int(required=True)
+    region = fields.Int(required=True, validate=validate.Range(1))
     delivery_hours = fields.List(
         cls_or_instance=fields.Str(validate=validate.Regexp(
             r"^(([0-1][0-9])|(2[0-3])):[0-5][0-9]-(([0-1][0-9])|(2[0-3])):[0-5][0-9]$"), required=True), required=True)
+
+    @validates("delivery_hours")
+    def is_wh_empty(self, lst):
+        if not lst:
+            raise exceptions.ValidationError("This field is empty.")
+
+    @validates("weight")
+    def is_valid_float(self, n):
+        if n < 0.01 or n > 50:
+            raise exceptions.ValidationError("Value out of range.")
+        if len(str(n)) != 4:
+            raise exceptions.ValidationError("Allowed no more than two digits after decimal point.")
 
 
 class AssignSchema(Schema):
