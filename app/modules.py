@@ -8,6 +8,7 @@ class Courier(db.Model):
     courier_type = db.relationship('Type', backref=db.backref('courier', lazy=True))
     regions = db.relationship('Regions', backref=db.backref('courier', lazy=True))
     working_hours = db.relationship('WorkingHours', backref=db.backref('courier', lazy=True))
+    earnings = db.Column(db.Integer, default=0)
 
     def __init__(self, courier_id):
         self.courier_id = courier_id
@@ -131,7 +132,7 @@ class OrderSchema(Schema):
     def is_valid_float(self, n):
         if n < 0.01 or n > 50:
             raise exceptions.ValidationError("Value out of range.")
-        if len(str(n)) != 4:
+        if len(str(n)) > 4:
             raise exceptions.ValidationError("Allowed no more than two digits after decimal point.")
 
 

@@ -101,7 +101,7 @@ def edit_courier(courier_id):
                 flag = False
                 for hours in order.hours:
                     start_ord, end_ord = to_time(hours.hours)
-                    if (start_ord <= start_cour <= end_ord) or (start_cour <= start_ord <= end_cour):
+                    if (start_ord <= start_cour < end_ord) or (start_cour <= start_ord < end_cour):
                         flag = True
                 if not flag:
                     order.courier_id = None
@@ -214,10 +214,15 @@ def assign_orders():
     courier = Courier.query.get(courier_id)
     cour_coef = Type.query.filter(Type.courier_id == courier_id).first().coef
     courier_regions = [int(i.__repr__()) for i in courier.regions]
-    orders = Orders.query.filter(Orders.weight <= courier_vol, Orders.region.in_(courier_regions),
-                                 Orders.courier_id == None).all()
+    not_completed = Orders.query.filter(Orders.assign != None, Orders.complete == None).all()
+    if not_completed:
+        not_completed_ids = [x.order_id for x in not_completed]
+        return make_response(jsonify({"orders": [{"id": or_id} for or_id in not_completed_ids],
+                                      "assign_time": not_completed[0].assign}), 200)
+    orders = Orders.query.filter(Orders.region.in_(courier_regions),
+                                 Orders.courier_id == None).order_by(Orders.weight).all()
     courier_hours = courier.working_hours
-    ids = []
+    orders_good = []
     assign_time = arrow.utcnow().isoformat()[:-10] + 'Z'
     for work_hours in courier_hours:
         start_cour, end_cour = to_time(work_hours.hours)
@@ -225,24 +230,28 @@ def assign_orders():
             flag = False
             for hours in order.hours:
                 start_ord, end_ord = to_time(hours.hours)
-                if (start_ord <= start_cour <= end_ord) or (start_cour <= start_ord <= end_cour):
+                if (start_ord <= start_cour < end_ord) or (start_cour <= start_ord < end_cour):
                     flag = True
-            if flag and order.order_id not in ids:
-                ids.append(order.order_id)
+            if flag and order not in orders_good:
                 res_ord = Orders.query.get(order.order_id)
-                res_ord.courier_id = courier_id
-                res_ord.assign = assign_time
-                res_ord.coef = cour_coef
-                db.session.commit()
-    total_orders = Orders.query.filter(Orders.courier_id == courier_id,
-                                       Orders.assign != None).with_entities(Orders.order_id).all()
-    total_orders = [x[0] for x in total_orders]
-    if not total_orders:
+                orders_good.append(res_ord)
+    total_weight = 0
+    i = -1
+    while (total_weight <= courier_vol) or (i < len(orders_good) - 1):
+        i += 1
+        total_weight += orders_good[i].weight
+    total_weight = total_weight - orders_good[i].weight
+    orders_good = orders_good[:i]
+    if total_weight == 0:
         return make_response(jsonify({"orders": []}), 200)
-    times = Orders.query.filter(Orders.assign != None).order_by(Orders.complete).with_entities(Orders.assign).all()
-    assign_time = times[-1][0]
-    return make_response(jsonify({"orders": [{"id": ord_id} for ord_id in total_orders], "assign_time": assign_time}),
-                         200)
+    total_ids = []
+    for order in orders_good:
+        order.courier_id = courier_id
+        order.assign = assign_time
+        order.coef = cour_coef
+        total_ids.append(order.order_id)
+    db.session.commit()
+    return make_response(jsonify({"orders": [{"id": ord_id} for ord_id in total_ids], "assign_time": assign_time}), 200)
 
 
 @app.route('/orders/complete', methods=['POST'])
@@ -267,7 +276,10 @@ def orders_complete():
     if order_exists.complete:
         return make_response(jsonify({"message": "This order has already been completed"}), 400)
     if complete_time <= order_exists.assign:
-        return make_response(jsonify({"message:" "complete time is not valid."}), 400)
+        return make_response(jsonify({"message": "Complete time is not valid."}), 400)
     order_exists.complete = complete_time
+    not_closed = Orders.query.filter(Orders.assign != None, Orders.complete == None).all()
+    if not not_closed:
+        cour_exists.earnings += 500 * order_exists.coef
     db.session.commit()
     return make_response(jsonify({"order_id": order_exists.order_id}), 200)
