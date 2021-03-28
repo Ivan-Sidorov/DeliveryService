@@ -108,6 +108,7 @@ class Orders(db.Model):
     courier_id = db.Column(db.Integer, db.ForeignKey('courier.courier_id'))
     coef = db.Column(db.Integer)
     hours = db.relationship('PreferredTime', backref=db.backref('order', lazy=True))
+    bunch_complete = db.Column(db.Integer)
 
     def __init__(self, order_id, weight, region):
         self.order_id = order_id
