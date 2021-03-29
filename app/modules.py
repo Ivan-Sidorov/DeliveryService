@@ -15,9 +15,9 @@ class Courier(db.Model):
 
 
 class CourierSchema(Schema):
-    courier_id = fields.Int(required=True, validate=validate.Range(1))
+    courier_id = fields.Int(strict=True, required=True, validate=validate.Range(1))
     courier_type = fields.Str(required=True, validate=validate.OneOf(['foot', 'bike', 'car']))
-    regions = fields.List(cls_or_instance=fields.Int(validate=validate.Range(1)), required=True)
+    regions = fields.List(cls_or_instance=fields.Int(strict=True, validate=validate.Range(1)), required=True)
     working_hours = fields.List(cls_or_instance=fields.Str(
         validate=validate.Regexp(r"^(([0-1][0-9])|(2[0-3])):[0-5][0-9]-(([0-1][0-9])|(2[0-3])):[0-5][0-9]$")),
         required=True)
@@ -32,11 +32,17 @@ class CourierSchema(Schema):
         if not lst:
             raise exceptions.ValidationError("This field is empty.")
 
+    @validates("working_hours")
+    def is_interval_ok(self, intervals):
+        for interval in intervals:
+            if interval[:5] >= interval[6:]:
+                raise exceptions.ValidationError("String does not match expected pattern.")
+
 
 class CourierEditSchema(Schema):
-    courier_id = fields.Int()
+    courier_id = fields.Int(strict=True)
     courier_type = fields.Str(validate=validate.OneOf(['foot', 'bike', 'car']))
-    regions = fields.List(cls_or_instance=fields.Int(validate=validate.Range(1)))
+    regions = fields.List(cls_or_instance=fields.Int(strict=True, validate=validate.Range(1)))
     working_hours = fields.List(
         cls_or_instance=fields.Str(
             validate=validate.Regexp(r"^(([0-1][0-9])|(2[0-3])):[0-5][0-9]-(([0-1][0-9])|(2[0-3])):[0-5][0-9]$")))
@@ -117,9 +123,9 @@ class Orders(db.Model):
 
 
 class OrderSchema(Schema):
-    order_id = fields.Int(required=True, validate=validate.Range(1))
+    order_id = fields.Int(strict=True, required=True, validate=validate.Range(1))
     weight = fields.Float(required=True)
-    region = fields.Int(required=True, validate=validate.Range(1))
+    region = fields.Int(strict=True, required=True, validate=validate.Range(1))
     delivery_hours = fields.List(
         cls_or_instance=fields.Str(validate=validate.Regexp(
             r"^(([0-1][0-9])|(2[0-3])):[0-5][0-9]-(([0-1][0-9])|(2[0-3])):[0-5][0-9]$"), required=True), required=True)
@@ -131,19 +137,28 @@ class OrderSchema(Schema):
 
     @validates("weight")
     def is_valid_float(self, n):
+        # print(type(n))
+        # if type(n) == str:
+        #     raise exceptions.ValidationError("Not a valid float.")
         if n < 0.01 or n > 50:
             raise exceptions.ValidationError("Value out of range.")
-        if len(str(n)) > 4:
+        if len(str(n)) > 5:
             raise exceptions.ValidationError("Allowed no more than two digits after decimal point.")
+
+    @validates("delivery_hours")
+    def is_interval_ok(self, intervals):
+        for interval in intervals:
+            if interval[:5] >= interval[6:]:
+                raise exceptions.ValidationError("String does not match expected pattern.")
 
 
 class AssignSchema(Schema):
-    courier_id = fields.Int(required=True)
+    courier_id = fields.Int(strict=True, required=True)
 
 
 class CompleteSchema(Schema):
-    courier_id = fields.Int(required=True)
-    order_id = fields.Int(required=True)
+    courier_id = fields.Int(strict=True, required=True)
+    order_id = fields.Int(strict=True, required=True)
     complete_time = fields.DateTime(format='iso', required=True)
 
 

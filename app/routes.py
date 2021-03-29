@@ -10,7 +10,7 @@ import datetime
 def post_couriers():
     try:
         data = request.json['data']
-    except KeyError:
+    except (KeyError, TypeError):
         return make_response(jsonify({"message": "Wrong structure, field 'Data' is required."}), 400)
     data = request.json['data']
     ids_error = {}
@@ -32,6 +32,7 @@ def post_couriers():
             courier_type = courier['courier_type']
             db.session.add(Courier(courier_id))
             db.session.add(Type(courier_type, courier_id))
+            print(courier_id, courier['regions'])
             for reg in courier['regions']:
                 db.session.add(Regions(reg, courier_id))
             for t in courier['working_hours']:
@@ -71,6 +72,7 @@ def edit_courier(courier_id):
         orders_del = []
         while total_weight > type_info.vol:
             orders = orders[:-1]
+            total_weight -= orders[-1].weight
             orders_del.append(orders[-1])
         for order in orders_del:
             order.courier_id = None
@@ -117,10 +119,11 @@ def edit_courier(courier_id):
                     order.assign = None
                     order.coef = None
         db.session.commit()
-    not_completed = Orders.query.filter(Orders.assign != None, Orders.complete == None).all()
+    not_completed = Orders.query.filter(
+        Orders.courier_id == courier_id, Orders.assign != None, Orders.complete == None).all()
     if not not_completed and bunch_one:
         courier.earnings += 500 * bunch_one[0].coef
-        orders_bunch = Orders.query.filter(Orders.assign == bunch_one[0].assign).all()
+        orders_bunch = Orders.query.filter(Orders.courier_id != None, Orders.assign == bunch_one[0].assign).all()
         for order in orders_bunch:
             order.bunch_complete = 1
         db.session.commit()
@@ -147,7 +150,11 @@ def get_courier(courier_id):
         "earnings": courier.earnings
     }
     orders_complete = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete == 1).all()
+    print(orders_complete)
     cour_regions = [int(i.__repr__()) for i in courier.regions]
+    old_regions = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete != None).all()
+    old_regions = [x.region for x in old_regions]
+    cour_regions = list(set(cour_regions + old_regions))
     durations = []
     for c_reg in cour_regions:
         total = 0
@@ -161,11 +168,14 @@ def get_courier(courier_id):
                     start = arrow.get(order.assign)
                     end = arrow.get(order.complete)
                 else:
-                    start = arrow.get(order.complete)
-                    end = arrow.get(bunch_orders[place + 1].complete)
+                    start = arrow.get(bunch_orders[place + 1].complete)
+                    end = arrow.get(order.complete)
+                print((end - start).total_seconds())
                 total += (end - start).total_seconds()
         if total != 0 and count != 0:
             durations.append(total / count)
+    if not durations:
+        return make_response(jsonify(courier_data), 200)
     courier_data["rating"] = round((60 * 60 - min(min(durations), 60 * 60)) / (60 * 60) * 5, 2)
     return make_response(jsonify(courier_data), 200)
 
@@ -182,7 +192,7 @@ def post_orders():
     for order in data:
         order_id = order['order_id']
         if order_id in list(map(lambda x: x.order_id, Orders.query.all())):
-            ids_error.append(order_id)
+            ids_error[order_id] = {"order_id": "Order with this id already exists."}
         try:
             result = schema.load(order)
         except exceptions.MarshmallowError as err:
@@ -202,7 +212,7 @@ def post_orders():
     if ids_error:
         for i in ids_error:
             ids_error[i].update({"id": i})
-        return make_response(jsonify({"validation_error": {"couriers": [ids_error[i] for i in ids_error]}}), 400)
+        return make_response(jsonify({"validation_error": {"orders": [ids_error[i] for i in ids_error]}}), 400)
     return make_response(jsonify({"orders": [{"id": o_id} for o_id in ids_success]}), 201)
 
 
@@ -220,24 +230,28 @@ def assign_orders():
     try:
         result = schema.load(request.json)
     except exceptions.MarshmallowError as err:
-        return make_response(jsonify({"message": err.messages}), 400)
+        # return make_response(jsonify({"message": err.messages}), 400)
+        return abort(400)
     courier_id = request.json['courier_id']
     if courier_id not in list(map(lambda x: x.courier_id, Courier.query.all())):
-        return abort(404)
+        return abort(400)
     courier_vol = (Type.query.filter(Type.courier_id == courier_id).first()).vol
     courier = Courier.query.get(courier_id)
     cour_coef = Type.query.filter(Type.courier_id == courier_id).first().coef
     courier_regions = [int(i.__repr__()) for i in courier.regions]
-    not_completed = Orders.query.filter(Orders.assign != None, Orders.complete == None).all()
+    not_completed = Orders.query.filter(
+        Orders.courier_id == courier_id, Orders.assign != None, Orders.complete == None).all()
     if not_completed:
         not_completed_ids = [x.order_id for x in not_completed]
         return make_response(jsonify({"orders": [{"id": or_id} for or_id in not_completed_ids],
                                       "assign_time": not_completed[0].assign}), 200)
+    print(courier_regions)
     orders = Orders.query.filter(Orders.region.in_(courier_regions),
                                  Orders.courier_id == None).order_by(Orders.weight).all()
     courier_hours = courier.working_hours
     orders_good = []
     ids = []
+    print(orders)
     assign_time = arrow.utcnow().isoformat()[:-10] + 'Z'
     for work_hours in courier_hours:
         start_cour, end_cour = to_time(work_hours.hours)
@@ -251,6 +265,7 @@ def assign_orders():
                 res_ord = Orders.query.get(order.order_id)
                 orders_good.append(res_ord)
                 ids.append(res_ord.order_id)
+    print(orders_good)
     total_weight = 0
     i = -1
     orders_good = Orders.query.filter(Orders.order_id.in_(ids)).order_by(Orders.weight).all()
@@ -283,7 +298,7 @@ def orders_complete():
     order_id = result['order_id']
     complete_time = request.json['complete_time']
     if complete_time[10] != 'T':
-        return make_response(jsonify({"message": {"complete_time": ["Not a valid datetime"]}}), 400)
+        return make_response(jsonify({"message": {"complete_time": ["Not a valid datetime."]}}), 400)
     cour_exists = Courier.query.get(courier_id)
     order_exists = Orders.query.get(order_id)
     if cour_exists is None or order_exists is None:
@@ -296,7 +311,8 @@ def orders_complete():
     if complete_time <= order_exists.assign:
         return make_response(jsonify({"message": "Complete time is not valid."}), 400)
     order_exists.complete = complete_time
-    not_closed = Orders.query.filter(Orders.assign != None, Orders.complete == None).all()
+    not_closed = Orders.query.filter(
+        Orders.courier_id == courier_id, Orders.assign != None, Orders.complete == None).all()
     if not not_closed:
         cour_exists.earnings += 500 * order_exists.coef
         orders_bunch = Orders.query.filter(Orders.assign == order_exists.assign).all()
