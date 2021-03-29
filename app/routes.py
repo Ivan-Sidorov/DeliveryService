@@ -48,7 +48,7 @@ def post_couriers():
 @app.route('/couriers/<int:courier_id>', methods=['PATCH'])
 def edit_courier(courier_id):
     if courier_id not in list(map(lambda x: x.courier_id, Courier.query.all())):
-        return abort(404)
+        return make_response(jsonify({"message" "Not found courier with this id."}), 404)
     schema = CourierEditSchema()
     try:
         result = schema.load(request.json)
@@ -139,7 +139,7 @@ def edit_courier(courier_id):
 @app.route('/couriers/<int:courier_id>', methods=['GET'])
 def get_courier(courier_id):
     if courier_id not in list(map(lambda x: x.courier_id, Courier.query.all())):
-        return abort(404)
+        return make_response(jsonify({"message": "Not found courier with this id."}), 404)
     courier = Courier.query.get(courier_id)
     courier_data = {
         "courier_id": courier.courier_id,
@@ -149,10 +149,6 @@ def get_courier(courier_id):
         "earnings": courier.earnings
     }
     orders_complete = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete == 1).all()
-    # cour_regions = [int(i.__repr__()) for i in courier.regions]
-    # old_regions = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete != None).all()
-    # old_regions = [x.region for x in old_regions]
-    # cour_regions = list(set(cour_regions + old_regions))
     cour_regions = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete == 1).all()
     cour_regions = [x.region for x in cour_regions]
     cour_regions = list(set(cour_regions))
@@ -281,7 +277,8 @@ def assign_orders():
         order.coef = cour_coef
         total_ids.append(order.order_id)
     db.session.commit()
-    return make_response(jsonify({"orders": [{"id": ord_id} for ord_id in total_ids], "assign_time": assign_time}), 200)
+    return make_response(jsonify({"orders": [{"id": ord_id} for ord_id in total_ids],
+                                  "assign_time": assign_time}), 200)
 
 
 @app.route('/orders/complete', methods=['POST'])

@@ -84,7 +84,8 @@ class TestViews(object):
     def test_edit_200(self):
         initial_assign = self.app.post('/orders/assign', data=json.dumps(assign_orders_200),
                                      content_type='application/json')
-        initial_complete = self.app.post('/orders/complete', data=json.dumps(complete_200), content_type='application/json')
+        initial_complete = self.app.post('/orders/complete', data=json.dumps(complete_200),
+                                         content_type='application/json')
         resp = self.app.patch('/couriers/2', data=json.dumps(edit_courier_200), content_type='application/json')
         assert resp.status_code == 200
         assert resp.json == edit_courier_200_resp
