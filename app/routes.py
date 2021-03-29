@@ -48,7 +48,7 @@ def post_couriers():
 @app.route('/couriers/<int:courier_id>', methods=['PATCH'])
 def edit_courier(courier_id):
     if courier_id not in list(map(lambda x: x.courier_id, Courier.query.all())):
-        return make_response(jsonify({"message" "Not found courier with this id."}), 404)
+        return make_response(jsonify({"message": "Not found courier with this id."}), 404)
     schema = CourierEditSchema()
     try:
         result = schema.load(request.json)
