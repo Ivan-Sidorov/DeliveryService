@@ -32,7 +32,6 @@ def post_couriers():
             courier_type = courier['courier_type']
             db.session.add(Courier(courier_id))
             db.session.add(Type(courier_type, courier_id))
-            print(courier_id, courier['regions'])
             for reg in courier['regions']:
                 db.session.add(Regions(reg, courier_id))
             for t in courier['working_hours']:
@@ -150,11 +149,13 @@ def get_courier(courier_id):
         "earnings": courier.earnings
     }
     orders_complete = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete == 1).all()
-    print(orders_complete)
-    cour_regions = [int(i.__repr__()) for i in courier.regions]
-    old_regions = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete != None).all()
-    old_regions = [x.region for x in old_regions]
-    cour_regions = list(set(cour_regions + old_regions))
+    # cour_regions = [int(i.__repr__()) for i in courier.regions]
+    # old_regions = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete != None).all()
+    # old_regions = [x.region for x in old_regions]
+    # cour_regions = list(set(cour_regions + old_regions))
+    cour_regions = Orders.query.filter(Orders.courier_id == courier_id, Orders.bunch_complete == 1).all()
+    cour_regions = [x.region for x in cour_regions]
+    cour_regions = list(set(cour_regions))
     durations = []
     for c_reg in cour_regions:
         total = 0
@@ -170,7 +171,6 @@ def get_courier(courier_id):
                 else:
                     start = arrow.get(bunch_orders[place + 1].complete)
                     end = arrow.get(order.complete)
-                print((end - start).total_seconds())
                 total += (end - start).total_seconds()
         if total != 0 and count != 0:
             durations.append(total / count)
@@ -245,13 +245,11 @@ def assign_orders():
         not_completed_ids = [x.order_id for x in not_completed]
         return make_response(jsonify({"orders": [{"id": or_id} for or_id in not_completed_ids],
                                       "assign_time": not_completed[0].assign}), 200)
-    print(courier_regions)
     orders = Orders.query.filter(Orders.region.in_(courier_regions),
                                  Orders.courier_id == None).order_by(Orders.weight).all()
     courier_hours = courier.working_hours
     orders_good = []
     ids = []
-    print(orders)
     assign_time = arrow.utcnow().isoformat()[:-10] + 'Z'
     for work_hours in courier_hours:
         start_cour, end_cour = to_time(work_hours.hours)
@@ -265,7 +263,6 @@ def assign_orders():
                 res_ord = Orders.query.get(order.order_id)
                 orders_good.append(res_ord)
                 ids.append(res_ord.order_id)
-    print(orders_good)
     total_weight = 0
     i = -1
     orders_good = Orders.query.filter(Orders.order_id.in_(ids)).order_by(Orders.weight).all()

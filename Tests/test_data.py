@@ -12,7 +12,7 @@ initial_couriers = {
         {
             "courier_id": 2,
             "courier_type": "car",
-            "regions": [3, 2, 1, 20],
+            "regions": [7, 3, 2, 1, 20],
             "working_hours": ["19:00-23:15", "11:35-14:05"]
         },
         {
@@ -136,7 +136,7 @@ couriers_no_data_400 = {
 couriers_no_data_400_resp = {
     "message": "Wrong structure, field 'Data' is required."
 }
-couriers_200 = {
+couriers_201 = {
     "data": [
         {
             "courier_id": 8,
@@ -146,7 +146,7 @@ couriers_200 = {
         }
     ]
 }
-couriers_200_resp = {
+couriers_201_resp = {
     "couriers": [
         {
             "id": 8
@@ -229,8 +229,7 @@ initial_orders = {
         }
     ]
 }
-
-orders_wrong = {
+orders_400 = {
     "data": [
         {
             "order_id": 1,
@@ -252,13 +251,73 @@ orders_wrong = {
         }
     ]
 }
+orders_400_resp = {
+    "validation_error": {
+        "orders": [
+            {
+                "order_id": "Order with this id already exists.",
+                "delivery_hours": {
+                    "1": [
+                        "String does not match expected pattern."
+                    ],
+                    "_schema": [
+                        "String does not match expected pattern."
+                    ]
+                },
+                "region": [
+                    "Not a valid integer."
+                ],
+                "id": 1
+            },
+            {
+                "order_id": [
+                    "Must be greater than or equal to 1."
+                ],
+                "region": [
+                    "Must be greater than or equal to 1."
+                ],
+                "weight": [
+                    "Value out of range."
+                ],
+                "delivery_hours": [
+                    "This field is empty."
+                ],
+                "id": -13
+            },
+            {
+                "delivery_hours": {
+                    "0": [
+                        "String does not match expected pattern."
+                    ],
+                    "1": [
+                        "Not a valid string."
+                    ]
+                },
+                "weight": [
+                    "Value out of range."
+                ],
+                "id": 14
+            }
+        ]
+    }
+}
 orders_no_data = {
     "order_id": 12,
     "weight": 17.6,
     "region": 4,
     "delivery_hours": ["15:55-19:04", "07:11-15:54"]
 }
-orders_ok = couriers_ok = {
+orders_201 = {
+    "data": [
+        {
+            "order_id": 13,
+            "weight": 17.6,
+            "region": 4,
+            "delivery_hours": ["14:00-16:00"]
+        }
+    ]
+}
+orders_201_resp = {
     "orders": [
         {
             "id": 13
@@ -274,6 +333,7 @@ assign_orders_400_nf = {
 assign_orders_200 = {
     "courier_id": 2
 }
+assign_time = arrow.utcnow().isoformat()[:-10] + 'Z'
 assign_orders_200_resp = {
     "orders": [
         {
@@ -292,7 +352,7 @@ assign_orders_200_resp = {
             "id": 1
         }
     ],
-    "assign_time": "2021-03-29T02:45:27.29Z"
+    "assign_time": assign_time
 }
 complete_time = (arrow.utcnow() + timedelta(minutes=15)).isoformat()[:-10] + 'Z'
 complete_200 = {
@@ -307,6 +367,14 @@ complete_400 = {
     "courier_id": 777,
     "order_id": 5,
     "complete_time": "2021-03-29T03:34:12.05Z"
+}
+edit_courier_400 = {
+    "unknown": "unknown"
+}
+edit_courier_400_resp = {
+    "unknown": [
+        "Unknown field."
+    ]
 }
 edit_courier_200 = {
     "regions": [3, 2, 1]
@@ -334,5 +402,5 @@ get_courier_200 = {
         "11:35-14:05"
     ],
     "earnings": 4500,
-    "rating": 3.33
+    "rating": 3.75
 }
